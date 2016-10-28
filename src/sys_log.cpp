@@ -24,6 +24,9 @@
 #include <time.h>
 #include "sys_defs.h"
 
+#ifdef WIN32
+//#include <windows.h>//OutputDebugString
+#endif
 
 #define DEFAULT_LOG_FILE	"game.log"
 
@@ -34,12 +37,12 @@ static bool	log2screen = false;
 static bool	log2console = false;
 static bool	initialised = false;
 static int	log_backup_level = 5;
-static char	log_filename_base[SYS_MAX_FILE];
-static dword	sys_log;
+static char	log_filename_base[SYS_MAX_FILE] = { 0 };
+static dword	sys_log = 0;
 
-static FILE	*log_files[MAX_LOGS];
-static dword	masks[MAX_LOGS];
-static int	num_logs;
+static FILE	*log_files[MAX_LOGS] = { NULL };
+static dword	masks[MAX_LOGS] = { 0 };
+static unsigned int	num_logs = 0;
 
 
 void BackupAndCreate ( FILE **f, const char *filename, int bklevel );
@@ -50,9 +53,7 @@ void PushBackup ( const char *filename, int bklevel );
 // Init/Kill
 void InitLog ()
 {
-	int	i;
-
-	for ( i=0; i<MAX_LOGS; i++ )
+	for ( unsigned int i=0; i<MAX_LOGS; ++i )
 	{
 		masks[i] = SETBIT(i);
 	}
@@ -86,12 +87,15 @@ dword CreateLog ( const char *filename, const char *descr )
 
 	BackupAndCreate ( &log_files[num_logs], filename, 0 );
 
-	fprintf ( log_files[num_logs], "+------------------------------------------------------------------+\n" );
-	fprintf ( log_files[num_logs], "|          %s log file for %02d/%02d/%04d  %02d:%02d:%02d                |\n", descr, tme->tm_mon + 1, tme->tm_mday, tme->tm_year + 1900, tme->tm_hour, tme->tm_min, tme->tm_sec   );
-	fprintf ( log_files[num_logs], "+------------------------------------------------------------------+\n" );
-	fprintf ( log_files[num_logs], "\n" );
-	fprintf ( log_files[num_logs], "\n" );
-	fflush ( log_files[num_logs] );
+	if (log_files[num_logs]!=NULL)
+	{
+		fprintf ( log_files[num_logs], "+------------------------------------------------------------------+\n" );
+		fprintf ( log_files[num_logs], "|          %s log file for %02d/%02d/%04d  %02d:%02d:%02d                |\n", descr, tme->tm_mon + 1, tme->tm_mday, tme->tm_year + 1900, tme->tm_hour, tme->tm_min, tme->tm_sec   );
+		fprintf ( log_files[num_logs], "+------------------------------------------------------------------+\n" );
+		fprintf ( log_files[num_logs], "\n" );
+		fprintf ( log_files[num_logs], "\n" );
+		fflush ( log_files[num_logs] );
+	}
 
 	initialised = true;
 
@@ -103,25 +107,23 @@ dword CreateLog ( const char *filename, const char *descr )
 
 void DisposeLog ( dword log_id )
 {
-	int	i;
-
-	for ( i=0; i<num_logs; i++ )
+	for ( unsigned int i=0; i<num_logs; ++i )
 	{
 		if ( SETBIT(i) == log_id )
 		{
-			fclose ( log_files[i] );
+			if (log_files[i] != NULL)
+				fclose ( log_files[i] );
 			initialised = false;
 		}
 	}
-
 }
 
 
 
 void Log ( const char *fmt, ... )
 {
-	char		text[1024];
-	va_list		ap = NULL;
+	char		text[1024]={0};
+	va_list		ap;
 
 	if ( !initialised )
 		return;
@@ -135,8 +137,16 @@ void Log ( const char *fmt, ... )
 		vsprintf ( (char*)text, fmt, ap );
 	va_end ( ap );
 
-	fprintf ( log_files[0], "%s", text );
-	fflush ( log_files[0] );
+	if (log_files[0]!=NULL)
+	{
+		fprintf ( log_files[0], "%s", text );
+		fflush ( log_files[0] );
+	}
+
+	#if defined(WIN32) && defined(_DEBUG)
+	//dj2016-10 Log to debugger in Windows
+	//::OutputDebugString( text );
+	#endif
 }
 
 
@@ -144,9 +154,8 @@ void Log ( const char *fmt, ... )
 
 void Log ( dword log_mask, const char *fmt, ... )
 {
-	char		text[1024];
-	va_list		ap = NULL;
-	int		i;
+	char		text[2048]={0};
+	va_list		ap;
 
 	if ( !initialised )
 		return;
@@ -154,18 +163,26 @@ void Log ( dword log_mask, const char *fmt, ... )
 	if ( NULL == fmt )
 		return;
 
-	memset ( text, 0, 1024 );
+	memset ( text, 0, 2048 );
 
 	va_start ( ap, fmt );
 		vsprintf ( (char*)text, fmt, ap );
 	va_end ( ap );
 
-	for ( i=0; i<num_logs; i++ )
+	for ( unsigned int i=0; i<num_logs; i++ )
 	{
 		if ( SETBIT(i) == log_mask )
 		{
-			fprintf ( log_files[i], "%s", text );
-			fflush ( log_files[i] );
+			if (log_files[i]!=NULL)
+			{
+				fprintf ( log_files[i], "%s", text );
+				fflush ( log_files[i] );
+			}
+
+			#if defined(WIN32) && defined(_DEBUG)
+			//dj2016-10 Log to debugger in Windows
+			//::OutputDebugString( text );
+			#endif
 		}
 	}
 }
@@ -191,7 +208,7 @@ void LogToConsole ( const bool l2c )
 
 void BackupAndCreate ( FILE **f, const char *filename, int bklevel )
 {
-	char	file[SYS_MAX_FILE];
+	char	file[SYS_MAX_FILE]={0};
 
 	if ( NULL == filename )
 		strcpy ( file, DEFAULT_LOG_FILE );
@@ -216,9 +233,9 @@ void BackupAndCreate ( FILE **f, const char *filename, int bklevel )
 
 void PushBackup2 ( const char *filename, int bklevel )
 {
-	char		oldname[SYS_MAX_FILE];
-	char		newname[SYS_MAX_FILE];
-	char		appendix[SYS_MAX_EXT];
+	char		oldname[SYS_MAX_FILE]={0};
+	char		newname[SYS_MAX_FILE]={0};
+	char		appendix[SYS_MAX_EXT]={0};
 	FILE		*ff = NULL;
 
 	strcpy ( oldname, filename );
@@ -252,8 +269,8 @@ void PushBackup2 ( const char *filename, int bklevel )
 
 void PushBackup ( const char *filename, int bklevel )
 {
-	char		newname[SYS_MAX_FILE];
-	char		appendix[SYS_MAX_EXT];
+	char		newname[SYS_MAX_FILE]={0};
+	char		appendix[SYS_MAX_EXT]={0};
 	FILE		*ff;
 
 	ff = fopen ( filename, "r" );

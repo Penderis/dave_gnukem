@@ -15,17 +15,19 @@ License: GNU GPL Version 2 (*not* "later versions")
 typedef unsigned int SOUND_HANDLE;
 #define SOUNDHANDLE_INVALID ((unsigned int)~0)
 
-extern bool bSoundEnabled;
-// not all sound cards have a mixer
-extern bool bHaveMixer;
-
 extern int          djSoundInit();
 extern void         djSoundDone();
 extern void         djSoundEnable();
 extern void         djSoundDisable();
 extern bool         djSoundEnabled();
-extern SOUND_HANDLE djSoundLoad( char *szFilename );
-extern bool         djSoundPlay( SOUND_HANDLE iHandle );
+extern SOUND_HANDLE djSoundLoad( const char *szFilename );
+extern bool         djSoundPlay( SOUND_HANDLE iHandle/*, bool bLoop=false*/ );
 
+//! Get current volume [0..128]
+extern int djSoundGetVolume();
+//! Set current volume setting [0..128]
+extern void djSoundSetVolume(int nVolume,bool bApply);
+//! Return true if volume change occurred (for purposes of e.g. on-screen message display or whatever)
+extern bool djSoundAdjustVolume(int nDiff);
 
 #endif

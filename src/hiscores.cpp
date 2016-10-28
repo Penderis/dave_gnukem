@@ -21,6 +21,11 @@ using namespace std;
 #include "graph.h"
 #include "djlog.h"
 
+SScore::SScore() : nScore(0)
+{
+	memset(szName,0,sizeof(szName));//ugh, this is 2016
+}
+
 // Scores, sorted from highest to lowest
 vector<SScore> g_aScores;
 
@@ -51,13 +56,14 @@ void ShowHighScores()
 	HighScoresMenu.setSize(0);
 	HighScoresMenu.setItems(instructionsHighScoreItems);
 	HighScoresMenu.setMenuCursor(instructionsHighScoreCursor);
-	HighScoresMenu.setClrBack( djColor(0,173,173) );
+	HighScoresMenu.setClrBack( djColor(48,66,128) );
 	HighScoresMenu.setXOffset( 220 );
 	HighScoresMenu.setYOffset ( 160 );
 	if (g_pImgHighScores==NULL)
 	{
 		g_pImgHighScores = new djImage;
 		g_pImgHighScores->Load(FILE_IMG_HIGHSCORES);
+		djCreateImageHWSurface( g_pImgHighScores );
 	}
 	if (g_pImgHighScores)
 	{
@@ -65,14 +71,14 @@ void ShowHighScores()
 
 		for ( int i=0; i<(int)g_aScores.size(); i++ )
 		{
-			char buf[128];
+			char buf[128]={0};
 			sprintf(buf, "%d  %d", i, g_aScores[i].nScore);
 			GraphDrawString(pVisBack, g_pFont8x8, 24, 24+i*12, (unsigned char*)buf);
 			sprintf(buf, "%s", g_aScores[i].szName);
 			GraphDrawString(pVisBack, g_pFont8x8, 24+11*8, 24+i*12, (unsigned char*)buf);
 		}
 
-		GraphFlip();
+		GraphFlip(true);
 
 		// Pop up high scores menu
 		do_menu( &HighScoresMenu);
@@ -95,7 +101,7 @@ bool LoadHighScores(const char *szFilename)
 		return false;
 	}
 
-	char buf[512];
+	char buf[512]={0};
 
 	fgets(buf, sizeof(buf), pIn);
 	djStripCRLF(buf); // strip CR/LF characters
@@ -129,7 +135,7 @@ bool SaveHighScores(const char *szFilename)
 		djMSG("SaveHighScores(%s): Failed to create file\n", szFilename);
 		return false;
 	}
-	fprintf(pOut, "%d\n", MIN(g_aScores.size(), MAX_HIGHSCORES));
+	fprintf(pOut, "%d\n", MIN((int)g_aScores.size(), (int)MAX_HIGHSCORES));
 	for ( int i=0; i<(int)(MIN(g_aScores.size(), MAX_HIGHSCORES)); i++ )
 	{
 		fprintf(pOut, "%s\n", g_aScores[i].szName);
@@ -189,4 +195,3 @@ void GetHighScore(int nIndex, SScore &Score)
 	strcpy(Score.szName, g_aScores[nIndex].szName);
 	Score.nScore = g_aScores[nIndex].nScore;
 }
-

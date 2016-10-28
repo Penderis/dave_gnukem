@@ -14,6 +14,7 @@ License: GNU GPL Version 2 (*not* "later versions")
 #include "mission.h"
 #include "djlog.h"
 #include "djstring.h"
+#include "graph.h"//djCreateImageHWSurface
 #include <stdio.h>
 #include <string.h>
 #include <stdlib.h>
@@ -32,8 +33,8 @@ int LoadMissions( const char * szfilename )
 {
 	if (szfilename==NULL) return -1; // NULL string
 	if (szfilename[0]==0) return -2; // empty string
-	FILE * fin;
-	char buf[1024];
+	FILE * fin=NULL;
+	char buf[1024]={0};
 
 	// open file
 	// FIXME: We need a consistent way to handle "DATA_DIR"
@@ -86,15 +87,13 @@ CMission::CMission()
 
 CMission::~CMission()
 {
-	int i;
-
-	for ( i=0; i<m_apLevels.size(); i++ )
+	for ( unsigned int i=0; i<m_apLevels.size(); i++ )
 	{
 		djDEL(m_apLevels[i]);
 	}
 	m_apLevels.clear();
 
-	for ( i=0; i<NUM_SPRITE_DATA; i++ )
+	for ( unsigned int i=0; i<NUM_SPRITE_DATA; i++ )
 	{
 		djDEL(m_apSpriteData[i]);
 	}
@@ -108,7 +107,7 @@ int CMission::Load( char * szfilename )
 	ifstream	fin;
 	string		line;
 	int			state;
-	char		filename[2048];
+	char		filename[2048]={0};
 
 	SYS_Debug ( "CMission::Load( %s ): Loading ...\n", szfilename );
 
@@ -280,7 +279,7 @@ int CMission::LoadSprites()
 
 int CMission::SaveSprites()
 {
-	int i;
+	int i=0;
 	int nRet = 0;
 
 	// i iterates through the 256 possible ID's for spritesets
@@ -291,7 +290,7 @@ int CMission::SaveSprites()
 		pSpriteData = g_pCurMission->GetSpriteData( i );
 		if ( pSpriteData != NULL ) // It *can* be NULL
 		{
-			char szFilename[1024];
+			char szFilename[1024]={0};
 			// Save sprite data file
 #ifdef DATA_DIR
 			sprintf( szFilename, "%s%s", DATA_DIR, pSpriteData->m_szFilenameData );
@@ -368,9 +367,9 @@ CSpriteData::~CSpriteData()
 
 int CSpriteData::LoadData( const char *szFilename )
 {
-	FILE	*fin;
-	int		i, j;
-	int		temp;
+	FILE	*fin=NULL;
+	int		i=0, j=0;
+	int		temp=0;
 
 	SYS_Debug ( "CSpriteData::LoadData( %s ): Loading ...\n", szFilename );
 
@@ -378,7 +377,7 @@ int CSpriteData::LoadData( const char *szFilename )
 	if (NULL == (fin = fopen( szFilename, "r" )))
 	{
 #ifdef DATA_DIR
-		char buf[1024];
+		char buf[1024]={0};
 		sprintf( buf, "%s%s", DATA_DIR, szFilename );
 		if (NULL == (fin = fopen( buf, "r" )))
 #endif
@@ -428,7 +427,7 @@ int CSpriteData::LoadData( const char *szFilename )
 			{
 				for ( int k=0; k<16; k++ )
 				{
-					djColor clr = m_pImage->GetPixelColor(k+iIndexX, j+iIndexY);
+					const djColor& clr = m_pImage->GetPixelColor(k+iIndexX, j+iIndexY);
 					r += (int)clr.r;
 					g += (int)clr.g;
 					b += (int)clr.b;
@@ -505,13 +504,14 @@ int CSpriteData::LoadSpriteImage()
 	}
 	else
 	{
-		char buf[1024];
+		char buf[1024]={0};
 #ifdef DATA_DIR
 		sprintf( buf, "%s%s", DATA_DIR, m_szImgFilename );
 #else
 		sprintf( buf, "%s", m_szImgFilename );
 #endif
 		iRet = m_pImage->Load( buf );
+		djCreateImageHWSurface( m_pImage );
 	}
 
 	return iRet;

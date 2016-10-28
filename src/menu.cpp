@@ -20,8 +20,6 @@ License: GNU GPL Version 2 (*not* "later versions")
 #include "sys_error.h"
 
 
-int option;
-
 void menu_move( CMenu *pMenu, int& option, int diff, unsigned char cCursor )
 {
 	djgSetColorFore( pVisBack, pMenu->getClrBack() );
@@ -33,12 +31,13 @@ void menu_move( CMenu *pMenu, int& option, int diff, unsigned char cCursor )
 	if (option > (pMenu->getSize() - 2)) option = 1;
 
 	// Play a sound
-	if (option != iOptionPrev) djSoundPlay( pMenu->getSoundMove () );
+	if (option != iOptionPrev)
+	{
+		djSoundPlay( pMenu->getSoundMove () );
+	}
 
 	// Redraw the menu cursor
 	djgDrawImageAlpha( pVisBack, g_pFont8x8, ((int)cCursor%32)*8, ((int)cCursor/32)*8, pMenu->getXOffset()+8, pMenu->getYOffset()+8*option, 8, 8 );
-
-	GraphFlip();
 }
 /*--------------------------------------------------------------------------*/
 
@@ -46,16 +45,14 @@ void menu_move( CMenu *pMenu, int& option, int diff, unsigned char cCursor )
 /*--------------------------------------------------------------------------*/
 int do_menu( CMenu *pMenu )
 {
-	int option;
-	int i;
-	int size;
-	const unsigned char *szCursor;
+	int i=0;
+	int size=0;
 
 	// Initialize cursor animation
-	szCursor = pMenu->getMenuCursor();
+	const unsigned char *szCursor = pMenu->getMenuCursor();
 
 	// set default option
-	option = 1;
+	int option = 1;
 
 	// calculate size of menu
 	for ( size=0; pMenu->getItems()[size].m_szText != NULL; size++ )
@@ -90,7 +87,7 @@ int do_menu( CMenu *pMenu )
 
 
 	// We want to maintain 10 fps on menu cursor animations
-	float fTimeFrame = (1.0f / 10.0f);
+	const float fTimeFrame = (1.0f / 10.0f);
 
 	// Start out by being at next time
 	float fTimeNext = djTimeGetTime();
@@ -101,82 +98,109 @@ int do_menu( CMenu *pMenu )
 	do
 	{
 		fTimeNow = djTimeGetTime();
-		bool bForceUpdate = false;
-		// If we're already behind, just force us to get there
-		if (fTimeNext < fTimeNow)
-		{
-			//printf( "slow\n" );
-			fTimeNext = fTimeNow;
-			bForceUpdate = true;
-		}
-
-		while (bmenurunning && (fTimeNow<fTimeNext || bForceUpdate)) // until we reach next frames time
-		{
-			SDL_Delay(10);
-
-			// poll keys
-			djiPoll();
-
-			// up arrow
-			static bool bkeyup = false;
-			if ( (g_iKeys[DJKEY_UP]) && (bkeyup == false) )
-			{
-				menu_move( pMenu, option, -1, *szCursor );
-			}
-			bkeyup = (bool)(g_iKeys[DJKEY_UP]!=0);
-
-			// down arrow
-			static bool bkeydown = false;
-			if ( (g_iKeys[DJKEY_DOWN]) && (bkeydown == false) )
-			{
-				menu_move( pMenu, option, 1, *szCursor );
-			}
-			bkeydown = (bool)(g_iKeys[DJKEY_DOWN] != 0);
-
-			// home key
-			if (g_iKeys[DJKEY_HOME])
-				menu_move( pMenu, option, -option + pMenu->getSize() - 1, *szCursor );
-
-			// end key
-			if (g_iKeys[DJKEY_END])
-				menu_move( pMenu, option, -option, *szCursor );
-
-			// enter
-			if (g_iKeys[DJKEY_ENTER])
-				bmenurunning = 0;
-
-			// escape
-			if (g_iKeys[DJKEY_ESC])
-			{
-				option = -1;
-				bmenurunning = 0;
-			}
-
-
-			fTimeNow = djTimeGetTime();
-			bForceUpdate = false;
-		}
 		fTimeNext = fTimeNow + fTimeFrame;
+		
+		// Sleep a little to not hog CPU to cap menu update (frame rate) at approx 10Hz
+		while (fTimeNow<fTimeNext)
+		{
+			SDL_Delay(5);
+			fTimeNow = djTimeGetTime();
+		}
 
+		// [dj2016-10] Re-implementing this to do own djiPollBegin/djiPollEnd in menu instead of calling djiPoll()
+		// because of issue whereby key events get 'entirely' missed if up/down even within one 'frame'.
+		djiPollBegin();
+		SDL_Event Event;
+		while (SDL_PollEvent(&Event))
+		{
+			switch (Event.type)
+			{
+			case SDL_KEYDOWN:
 
+				// 'Global' shortcut keys for adjusting volume [dj2016-10]
+				if (Event.key.keysym.sym==SDLK_PAGEUP)
+				{
+					djSoundAdjustVolume(4);
+					SetConsoleMessage( djStrPrintf( "Volume: %d%%", (int) ( 100.f * ( (float)djSoundGetVolume()/128.f ) ) ) );
+				}
+				else if (Event.key.keysym.sym==SDLK_PAGEDOWN)
+				{
+					djSoundAdjustVolume(-4);
+					SetConsoleMessage( djStrPrintf( "Volume: %d%%", (int) ( 100.f * ( (float)djSoundGetVolume()/128.f ) ) ) );
+				}
+				else if (Event.key.keysym.sym==SDLK_INSERT)
+				{
+					if (djSoundEnabled())
+						djSoundDisable();
+					else
+						djSoundEnable();
+					SetConsoleMessage( djSoundEnabled() ? "Sounds ON (Ins)" : "Sounds OFF (Ins)" );
+				}
+
+				// up arrow
+				else if (Event.key.keysym.sym==SDLK_UP)
+					menu_move( pMenu, option, -1, *szCursor );
+
+				// down arrow
+				else if (Event.key.keysym.sym==SDLK_DOWN)
+					menu_move( pMenu, option, 1, *szCursor );
+
+				// home key
+				else if (Event.key.keysym.sym==SDLK_HOME)//g_iKeys[DJKEY_HOME])
+					menu_move( pMenu, option, -option + pMenu->getSize() - 1, *szCursor );
+
+				// end key
+				else if (Event.key.keysym.sym==SDLK_END)//if (g_iKeys[DJKEY_END])
+					menu_move( pMenu, option, -option, *szCursor );
+
+				// enter
+				else if (Event.key.keysym.sym==SDLK_RETURN)//if (g_iKeys[DJKEY_ENTER])
+					bmenurunning = 0;
+
+				// escape
+				else if (Event.key.keysym.sym==SDLK_ESCAPE)//if (g_iKeys[DJKEY_ESC])
+				{
+					option = -1;
+					bmenurunning = 0;
+				}
+
+				break;
+			case SDL_KEYUP:
+				break;
+			case SDL_QUIT:
+				bmenurunning=0;
+				option = -1;//Exit
+				break;
+			}
+		}
+		djiPollEnd();
+
+		// [dj2016-10] this if seems silly here to me but if i take it out, then as you press Esc on menu,
+		// it draws some 'wrong' stuff for one frame .. whatever, just adding this if back again
 		if (bmenurunning)
 		{
-			// Animate cursor
+			// Animate cursor [note this is unfortunately currently a bit 'tied' to the 10Hz frame rate limit ...
+			// if want to e.g. increase menu frame rate in future to say 20Hz or whatever, then the cursor will
+			// animate two times too fast (say) .. if do that in future then must just make this update slightly
+			// 'smarter' on the animation - not a priority now at all. dj2016-10]
 			szCursor++;
 			if (*szCursor == 0)
 				szCursor = pMenu->getMenuCursor ();
 
-			menu_move( pMenu, option, 0, *szCursor );
+			menu_move( pMenu, option, 0, *szCursor );//Force redraw of cursor for animation purposes
 		}
 
+		GraphFlip(true);
 	} while (bmenurunning);
 
 	// Wait for user to let go of escape or enter
 	if (option == -1)
 		djiWaitForKeyUp(DJKEY_ESC);
 	else
+		//this isn't working [anymore?] for redefine keys???
 		djiWaitForKeyUp(DJKEY_ENTER);
 
+	//Mix_FadeOutChannel(1, 1000);
 
 	return option;
 }

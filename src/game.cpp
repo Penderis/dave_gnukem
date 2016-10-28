@@ -40,6 +40,28 @@ using namespace std;
 #include "bullet.h"
 #include "hiscores.h"
 #include "sys_log.h"
+#include "djstring.h"//djStrPrintf
+
+#ifndef NOSOUND
+#include <SDL_mixer.h>//For background music stuff
+Mix_Music* g_pGameMusic=NULL;
+#endif
+
+int VIEW_WIDTH = 12;
+int VIEW_HEIGHT = 10;
+
+//[dj2016-10-10]
+bool g_bBigViewportMode=false;
+
+//[dj2016-10-10 [livecoding-streamed]] Trying to fix "Dying in the pungee sticks will often cause a crash"
+// Problem in short was:
+// * Game main loop iterating over 'things' and checking hero interaction with them through HeroOverlaps
+// * CSpike::HeroOverlaps triggers 'update health (-1)
+// * SetHealth on health reaching 0 would call Die()
+// * Die() in turn would try restart the level [immediately], which would cause all g_apThings to be deleted [and new ones created etc.] - and this is the bad part - while we're still in the loop checking HeroOverlaps() with those things
+// Solution: Die 'asynchronously' - i.e. just set a flag that you've died, and then (still immediately) but once 'safely' past iterating through all
+// the g_apThings update ticks etc., *then* actually restartlevel.
+bool g_bDied = false;
 
 /*--------------------------------------------------------------------------*/
 //
@@ -71,13 +93,14 @@ void IngameMenu();
 // Sound files
 //
 
-char *g_szSoundFiles[SOUND_MAX] =
+const char *g_szSoundFiles[SOUND_MAX] =
 {
 	"data/sounds/pickup.wav",
-	"data/sounds/laser2.wav",
+	"data/sounds/shoot_cg1_modified.wav",//<- Hero shoot sound
 	"data/sounds/bark.wav",
 	"data/sounds/wooeep.wav",
-	"data/sounds/explode.wav"
+	"data/sounds/explode.wav",
+	"data/sounds/sfx_weapon_singleshot7.wav"//<- Monster shoot sound
 };
 SOUND_HANDLE g_iSounds[SOUND_MAX];
 
@@ -195,7 +218,7 @@ void GameInitialSetup()
 	LoadHighScores();		// Load high scores
 
 	// Set up the in-game menu
-	gameMenu.setClrBack(djColor(0,0,129));
+	gameMenu.setClrBack( djColor(48,66,128) );
 	gameMenu.setSize(0);
 	gameMenu.setItems(gameMenuItems);
 	gameMenu.setMenuCursor(gameMenuCursor);
@@ -215,6 +238,7 @@ void GameInitialSetup()
 	{
 		pSkinGame = new djImage;
 		pSkinGame->Load( FILE_GAMESKIN );
+		djCreateImageHWSurface( pSkinGame );
 	}
 }
 
@@ -241,6 +265,7 @@ void PerGameSetup()
 	HeroSetJumpMode(JUMP_NORMAL);
 
 	g_nLevel = 0;
+	g_bDied = false;
 
 	g_nScore = 0;
 	g_nFirepower = 1;
@@ -259,11 +284,58 @@ void PerLevelSetup()
 
 	Log ( "PerLevelSetup()\n" );
 
+	// Start per-level background music
+	std::vector< std::string > asMusicFiles;
+
+	/*//these are sorted smallest to largest .. for now just selected all except the smaller ones as the shorter ones will may drive you too crazy with the looping..
+	// not yet sure if even the longer ones will be too repetitive [dj2016-10]
+	asMusicFiles.push_back("Dont-Mess-with-the-8-Bit-Knight.ogg");
+	asMusicFiles.push_back("Futureopolis.ogg");
+	asMusicFiles.push_back("Farty-McSty.ogg");
+	asMusicFiles.push_back("Attack-of-the-8-Bit-Hyper-Cranks.ogg");
+	asMusicFiles.push_back("The-8-bit-Princess.ogg");
+	asMusicFiles.push_back("Mister-Snarkypants.ogg");
+	asMusicFiles.push_back("Classy-8-Bit.ogg");
+	asMusicFiles.push_back("80s-Space-Game-Loop_v001.ogg");
+	asMusicFiles.push_back("Good-Morning-Doctor-Weird.ogg");
+	asMusicFiles.push_back("Crazy-Candy-Highway-2.ogg");
+	asMusicFiles.push_back("Cyber-Dream-Loop.ogg");
+	asMusicFiles.push_back("The-Furry-Monsters-Laboratory.ogg");
+	asMusicFiles.push_back("World-of-Automatons_Looping.ogg");
+	asMusicFiles.push_back("Castle-8-Bit-Stein.ogg");*/
+	asMusicFiles.push_back("Insane-Gameplay_Looping.ogg");
+	asMusicFiles.push_back("Dystopic-Mayhem.ogg");
+	asMusicFiles.push_back("Mad-Scientist_Looping.ogg");
+	asMusicFiles.push_back("Monkey-Drama.ogg");
+	//[used in main menu, though am totally opening to changing that]asMusicFiles.push_back("8-Bit-Mayhem.ogg");
+	asMusicFiles.push_back("The-Darkness-Below_Looping.ogg");
+	asMusicFiles.push_back("Techno-Caper.ogg");
+	asMusicFiles.push_back("Funky-Gameplay_Looping.ogg");
+	asMusicFiles.push_back("Escape_Looping.ogg");
+	asMusicFiles.push_back("Monster-Street-Fighters.ogg");
+	asMusicFiles.push_back("Monsters-in-Bell-Bottoms_Looping.ogg");
+	asMusicFiles.push_back("Retro-Frantic_V001_Looping.ogg");
+	asMusicFiles.push_back("Techno-Gameplay_Looping.ogg");
+	// This is somewhat gross quick n dirty simplistic for now - should rather have ability to assign music file in the level file format [dj2016-10]
+	int nMusicFile = (g_nLevel % asMusicFiles.size());
+	std::string sBasePath = "data/music/eric_matyas/";
+	if (g_pGameMusic!=NULL)
+	{
+		Mix_FreeMusic(g_pGameMusic);
+		g_pGameMusic = NULL;
+	}
+	g_pGameMusic = Mix_LoadMUS((sBasePath + asMusicFiles[nMusicFile]).c_str());
+	if (g_pGameMusic!=NULL)
+	{
+		Mix_FadeInMusic(g_pGameMusic, -1, 500);
+	}
+
 	// Save current score and firepower - these must be restored if we die.
 	g_nScoreOld = g_nScore;
 	g_nFirepowerOld = g_nFirepower;
 	g_nHealthOld = g_nHealth;
 
+	g_bDied = false;
 
 	// (1) Initialize all relevant variables for entering a new level
 
@@ -313,6 +385,7 @@ void PerLevelSetup()
 	{
 		djDEL(pBackground);
 	}
+	djCreateImageHWSurface( pBackground );
 
 	// Clear out inventory
 	InvClear();
@@ -326,6 +399,8 @@ void PerLevelSetup()
 // Per-game cleanup
 void PerGameCleanup()
 {
+	PerLevelCleanup();//dj2016-10 adding this, not quite sure where it 'should' be called
+	
 	// Empty the inventory completely
 	InvEmpty();
 	// Delete game background image
@@ -337,7 +412,11 @@ void PerGameCleanup()
 
 void PerLevelCleanup()
 {
-
+	if (g_pGameMusic!=NULL)
+	{
+		Mix_FreeMusic(g_pGameMusic);
+		g_pGameMusic = NULL;
+	}
 }
 
 // we have something like this:
@@ -362,7 +441,7 @@ int game_startup()
 
 	TRACE( "game_startup(): GameDrawSkin()\n" );
 	GameDrawSkin();
-	GraphFlip();
+	GraphFlip(!g_bBigViewportMode);
 
 	// Per level setup (fixme, should this get called from withing per-game setup?
 	PerLevelSetup();
@@ -381,10 +460,10 @@ int game_startup()
 
 	GameDrawFirepower();
 
-	GraphFlip();
+	GraphFlip(!g_bBigViewportMode);
 
 	// try maintain a specific frame rate
-	float fTimeFrame = (1.0f / FRAME_RATE);
+	const float fTIMEFRAME = (1.0f / FRAME_RATE);
 
 	float fTimeFirst = djTimeGetTime();
 
@@ -428,6 +507,26 @@ int game_startup()
 						if (Event.key.keysym.sym==g_anKeys[i])
 							anKeyState[i] = 1;
 					}
+
+					// 'Global' shortcut keys for adjusting volume [dj2016-10]
+					if (Event.key.keysym.sym==SDLK_PAGEUP)
+					{
+						djSoundAdjustVolume(4);
+						SetConsoleMessage( djStrPrintf( "Volume: %d%%", (int) ( 100.f * ( (float)djSoundGetVolume()/128.f ) ) ) );
+					}
+					else if (Event.key.keysym.sym==SDLK_PAGEDOWN)
+					{
+						djSoundAdjustVolume(-4);
+						SetConsoleMessage( djStrPrintf( "Volume: %d%%", (int) ( 100.f * ( (float)djSoundGetVolume()/128.f ) ) ) );
+					}
+					else if (Event.key.keysym.sym==SDLK_INSERT)
+					{
+						if (djSoundEnabled())
+							djSoundDisable();
+						else
+							djSoundEnable();
+						SetConsoleMessage( djSoundEnabled() ? "Sounds ON (Ins)" : "Sounds OFF (Ins)" );
+					}
 					break;
 				case SDL_KEYUP:
 					for ( i=0; i<KEY_NUMKEYS; i++ )
@@ -447,9 +546,14 @@ int game_startup()
 			//if (g_iKeys[DJKEY_UP])		key_action = 1;
 			//if (g_iKeys[DJKEY_LEFT])	key_left = 1;
 			//if (g_iKeys[DJKEY_RIGHT])	key_right = 1;
-			if (g_iKeys[DJKEY_CTRL])	key_jump = 1;
+			
+			// We allow ctrl as a sort of 'default' fallback jump if (and only if) it isn't assigned/redefined to anything
+			if (!IsGameKeyAssigned(SDLK_RCTRL))
+			{
+				if (g_iKeys[DJKEY_CTRL])	key_jump = 1;
+			}
 			//if (g_iKeys[DJKEY_ALT])		key_shoot = 1;
-			if (g_iKeys[DJKEY_P])		key_jump = 1;
+			//[dj2016-10 don't think it really makes sense to have P as jump - if anything, pause??[LOW]](g_iKeys[DJKEY_P])		key_jump = 1;
 //			if (g_iKeys[DJKEY_E])		key_edit = 1;
 // "integrated" level editor:
 			if (g_iKeys[DJKEY_F4])
@@ -474,6 +578,43 @@ int game_startup()
 					ShowGameMessage("CHEAT: GOD MODE", 96);
 					g_bGodMode = true;
 				}
+				// BACKSPACE + B: Toggle 'big viewport mode' [dj2016-10-10]
+				// It seems to be difficult to toggle just once ... so we detect key up/down 'edge' and only toggle on that
+				static bool g_bBKeyLast=false;
+				bool bBKey = (g_iKeys[DJKEY_B]!=0);
+				if (bBKey && !g_bBKeyLast)// Detect keydown 'edge'
+				{
+					g_bBigViewportMode = !g_bBigViewportMode;
+					if (g_bBigViewportMode)
+					{
+						VIEW_WIDTH = (pVisView->width / 16) - 10;
+						VIEW_HEIGHT = (pVisView->height - 5*16) / 16;
+						if (VIEW_HEIGHT>=100)VIEW_HEIGHT=100;
+						if (VIEW_WIDTH>=128)VIEW_WIDTH=128;
+					}
+					else
+					{
+						VIEW_WIDTH = 12;
+						VIEW_HEIGHT = 10;
+
+						// NB, TODO, we actually need to also need to redraw score etc. here (though since this is just a dev/editing mode, not a real game mode, it doesn't have to be perfect)
+
+						// When going out of 'big viewport' mode, hero might now be off the (now-tiny) 'viewport' :/ .. so must also 're-center' viewport around hero
+						if (x>xo+VIEW_WIDTH/2) xo = x-VIEW_WIDTH/2;
+						if (y>yo+VIEW_HEIGHT/2) yo = y-VIEW_HEIGHT/2;
+
+						// Redraw everything that needs to be redrawn, as larger viewport will have obliterated right side with score etc.
+						GameDrawSkin();
+						GraphFlipView( VIEW_WIDTH, VIEW_HEIGHT );
+						update_health( 0 );
+						update_score( 0 );
+						GameDrawFirepower();
+						InvDraw();
+						GraphFlip(!g_bBigViewportMode);//Flip
+					}
+				}
+				g_bBKeyLast = bBKey;
+
 				// BACKSPACE + P: Powerboots
 				if (g_iKeys[DJKEY_P])
 				{
@@ -522,6 +663,7 @@ int game_startup()
 			}
 #endif
 
+//this shouldn't be in 'default' game or something .. ?
 			// Debug: hurt self
 			static bool b = false;
 			bool bOld = b;
@@ -537,8 +679,8 @@ int game_startup()
 			bForceUpdate = false;
 		}
 		// FIXME: time next should be calculated more absolutely, not relatively.
-//		fTimeNext = fTimeNow + fTimeFrame;
-		fTimeNext = fTimeNext + fTimeFrame;
+//		fTimeNext = fTimeNow + fTIMEFRAME;
+		fTimeNext = fTimeNext + fTIMEFRAME;
 
 		//-- ESC - Pop up the in-game menu
 		if (iEscape==1)
@@ -547,12 +689,12 @@ int game_startup()
 
 			// Redraw everything that needs to be redrawn
 			GameDrawSkin();
-			GraphFlipView( VIEW_WIDTH );
+			GraphFlipView( VIEW_WIDTH, VIEW_HEIGHT );
 			update_health( 0 );
 			update_score( 0 );
 			GameDrawFirepower();
 			InvDraw();
-			GraphFlip();
+			GraphFlip(!g_bBigViewportMode);
 		}
 
 
@@ -560,15 +702,15 @@ int game_startup()
 		float fTimeRun;
 		fTimeRun = fTimeNow - fTimeFirst;
 		iFrameCount++;
-		static char sbuf[1024];
+		static char sbuf[1024]={0};
 		sprintf( sbuf, "%.2f", (float)iFrameCount / fTimeRun );
 		if (iFrameCount==60)
 		{
 			iFrameCount /= 2;
 			fTimeFirst += (fTimeRun/2);
 		}
-		djgDrawImage( pVisBack, pSkinGame, 0, 0, 0, 0, 196, 8 );
-		GraphDrawString( pVisBack, g_pFont8x8, 0, 0, (unsigned char*)sbuf );
+		djgDrawImage( pVisBack, pSkinGame, 0, 8, 0, 8, 196, 8 );
+		GraphDrawString( pVisBack, g_pFont8x8, 0, 8, (unsigned char*)sbuf );
 
 		// update
 		float fT1 = djTimeGetTime();
@@ -579,6 +721,7 @@ int game_startup()
 			afTimeTaken.erase(afTimeTaken.begin());
 
 
+//fixmeV1 this looks pretty fundamental to get right:
 		// FIXME: This behaviour is incorrect. A keyup inside a 2nd-time round
 		// frame keypoll is not getting registered before the 2nd frame updates
 		// and draws (huh?) (try move left/right only one block. It's difficult)
@@ -589,8 +732,14 @@ int game_startup()
 		key_jump   = anKeyState[KEY_JUMP];
 		key_shoot  = anKeyState[KEY_SHOOT];
 
-		key_jump   = g_iKeys[DJKEY_CTRL];
-		key_jump  |= g_iKeys[DJKEY_P];
+		// We allow ctrl as a sort of 'default' fallback jump if (and only if) it isn't assigned/redefined to anything
+		//fixmeLOW/MED - This functionality seems to appear twice - not sure what that's about but will probably have
+		// to come back to that [perhaps as part of looking into the story of keypolling behavior being 'subtly incorrect'] [dj2016-10-16]
+		if (!IsGameKeyAssigned(SDLK_RCTRL))
+		{
+			key_jump   = g_iKeys[DJKEY_CTRL];
+		}
+		//key_jump  |= g_iKeys[DJKEY_P];
 
 		// ensure we don't leave the borders of the level
 		// fixme; is this still necessary what with the (other functions)
@@ -598,7 +747,7 @@ int game_startup()
 		y = MAX( MIN(y, 99), 2 );
 	} // while (game running)
 
-	TRACE("game_startup(): main game loop exitted.\n");
+	TRACE("game_startup(): main game loop exited.\n");
 
 	PerGameCleanup();
 	return g_nScore;
@@ -607,10 +756,9 @@ int game_startup()
 /*-----------------------------------------------------------*/
 void GameHeartBeat()
 {
-	CThing * pThing;
-	int n, i, j;
-	int ifoo;
-	ifoo = key_action;
+	CThing * pThing = NULL;
+	int n=0, i=0, j=0;
+	//int ifoo = key_action;
 
 	// Update hero basic stuff
 	HeroUpdate();
@@ -741,12 +889,12 @@ void GameHeartBeat()
 
 	// Check for bullet collisions with things (e.g. shootable boxes, monsters etc).
 	// Also we check for monster bullet collisions against hero.
-	for ( i=0; i<(int)g_apBullets.size(); i++ )
+	for ( i=0; i<(int)g_apBullets.size(); ++i )
 	{
 		CBullet *pBullet = g_apBullets[i];
 		if (pBullet->eType==CBullet::BULLET_HERO)
 		{
-			for ( j=0; j<(int)g_apThings.size(); j++ )
+			for ( j=0; j<(int)g_apThings.size(); ++j )
 			{
 				CThing *pThing = g_apThings[j];
 				if (pThing->IsShootable())
@@ -865,11 +1013,13 @@ NextBullet3:
 
 	// Interact with "things"
 	// Check if you're on anything funny, like an exit
-	for ( i=0; i<(int)g_apThings.size(); i++ )
+	for ( i=0; i<(int)g_apThings.size(); ++i )
 	{
 		CThing *pThing = g_apThings[i];
 		if (pThing->OverlapsBounds(x*16+x_small*8, y*16-16))
 		{
+			// [dj2016-10-10] Note that if inside HeroOverlaps(), it can cause you to die, e.g. if you've interacted with
+			// spikes .. so be aware you may be dead after calling that .. thats g_bDied, which causes level restart below.
 			int nRet = pThing->HeroOverlaps();
 			if (nRet==THING_DIE)
 			{
@@ -904,7 +1054,7 @@ NextBullet3:
 
 
 	// Drop all objects that can fall
-	for ( i=0; i<(int)g_apThings.size(); i++ )
+	for ( i=0; i<(int)g_apThings.size(); ++i )
 	{
 		pThing = g_apThings[i];
 		// if (object falls) && (nothing below it) && (inview)
@@ -933,7 +1083,7 @@ NextBullet3:
 
 
 	// "Tick" (update) all objects
-	for ( i=0; i<(int)g_apThings.size(); i++ )
+	for ( i=0; i<(int)g_apThings.size(); ++i )
 	{
 		pThing = g_apThings[i];
 		// FIXME: THING_REMOVE?
@@ -948,6 +1098,12 @@ NextBullet3:
 
 
 
+	if (g_bDied)
+	{
+		// Reset to beginning of current level
+		RestartLevel();
+		g_bDied = false;
+	}
 
 
 
@@ -965,13 +1121,13 @@ NextBullet3:
 	}
 
 	// Flip the back buffer onto the front
-	GraphFlip();
+	GraphFlip(!g_bBigViewportMode);
 }
 
 void Die()
 {
-	// Reset to beginning of current level
-	RestartLevel();
+	// [dj2016-10] Just set a flag here that we've died, which we process 'asynchronously' (to fix the 'dying in the pungee sticks will often cause a crash' issue)
+	g_bDied = true;
 }
 
 void HeroShoot(int nX, int nY, int nXDiff, int nYDiff)
@@ -995,7 +1151,7 @@ void MonsterShoot(int nX, int nY, int nXDiff, int nYDiff)
 	pBullet->dy = nYDiff;
 	pBullet->eType = CBullet::BULLET_MONSTER;
 	g_apBullets.push_back(pBullet);
-	djSoundPlay( g_iSounds[SOUND_SHOOT] );
+	djSoundPlay( g_iSounds[SOUND_SHOOT2] );
 }
 
 void HeroSetHurting(bool bReset)
@@ -1029,8 +1185,8 @@ void SetHealth(int nHealth)
 	}
 
 	// Build a string representing health bars (which are in the 8x8 font)
-	char szHealth[MAX_HEALTH+1];
-	for ( i=0; i<MAX_HEALTH; i++ )
+	char szHealth[MAX_HEALTH+1]={0};
+	for ( i=0; i<MAX_HEALTH; ++i )
 	{
 		// 170 = health; 169 = not health
 		szHealth[MAX_HEALTH-1-i] = (i<g_nHealth?170:169);
@@ -1053,7 +1209,7 @@ void SetScore(int nScore)
 {
 	g_nScore = nScore;
 
-	char score_buf[16];
+	char score_buf[32]={0};
 	sprintf( score_buf, "%10d", (int)g_nScore );
 	// Clear behind the score with part of the game skin
 	if (pSkinGame)
@@ -1085,47 +1241,72 @@ void DrawThingsAtLayer(EdjLayer eLayer)
 
 void GameDrawView()
 {
-	int i,j,a,b,xoff,yoff;
+	int i=0,j=0,a=0,b=0,xoff=0,yoff=0;
 	int anim_offset = 0;
-	unsigned char *tempptr;
+	unsigned char *tempptr=NULL;
 
-	// Clear view background
+	// Draw view background
 	if (pBackground)
 		djgDrawImage(pVisView, pBackground, 0, 0, 16, 16, VIEW_WIDTH*16, VIEW_HEIGHT*16);
-	else
-		djgClear(pVisView);
+
+	// Clear viewport background before starting to draw game view in there
+	// (If we don't, then the background doesn't clear where there are 'bg' (background) sprites)
+	// (We don't want to draw the actual sprite as it has a little 'BG' on it to help with level editing)
+	if (g_bBigViewportMode || pBackground==NULL)//<- The (only) reason we don't 'need' to do this if not in 'big viewport mode' is because of the pBackground image draw right above, effectively clears the viewport 'anyway' already for that section where there is background image
+	{
+		SDL_Rect rect;
+		rect.x = 16;
+		rect.y = 16;
+		rect.w = VIEW_WIDTH*16;
+		rect.h = VIEW_HEIGHT*16;
+		SDL_FillRect(pVisView->pSurface, &rect, SDL_MapRGB(pVisView->pSurface->format, 0, 0, 0));
+		//djgClear(pVisView);
+	}
 
 	//(10 seconds got to just after coke can, purple lab)
 	tempptr = (unsigned char *)(g_pLevel) + yo*512+(xo<<2);
 	yoff = 200+16;
 	//  c=2;
-	for ( i=0; i<10; i++ )
+	//const unsigned int uLevelPixelW = 128*16;
+	//const unsigned int uLevelPixelH = 100*16;
+
+
+	for ( i=0; i<VIEW_HEIGHT; ++i )
 	{
 		//  d=24;
 		xoff = -xo_small+2;
-		for ( j=0; j<VIEW_WIDTH+xo_small; j++ )
+		for ( j=0; j<VIEW_WIDTH+xo_small; ++j )
 		{
-			// BLOCK[2,3] -> background block
-			a = *(tempptr+2);
-			b = *(tempptr+3);
-			// Animated block?
-			anim_offset = (GET_EXTRA( a, b, 4 ) & FLAG_ANIMATED) ? anim4_count : 0;
+			// Bounds-checks to not 'buffer overflow' etc. by going past bottom (or right) of level [dj2016-10]
+			if (yo+i>=LEVEL_HEIGHT || xo+j>=LEVEL_WIDTH)
+			{
+				// do nothing .. leave black
+			}
+			else
+			{
+				// BLOCK[2,3] -> background block
+				a = *(tempptr+2);
+				b = *(tempptr+3);
+				// Animated block?
+				anim_offset = (GET_EXTRA( a, b, 4 ) & FLAG_ANIMATED) ? anim4_count : 0;
 
-			// draw background block
-			//djgDrawImage( pVisView, g_pCurMission->GetSpriteData(a)->m_pImage, ((b+anim_offset)%16)*16, ((b+anim_offset)/16)*16, xoff*8,16+i*16,16,16 );
-			if ((a | b) != 0)
-				DRAW_SPRITE16A(pVisView, a, b+anim_offset, xoff*8, 16+i*16);
+				// draw background block
+				//djgDrawImage( pVisView, g_pCurMission->GetSpriteData(a)->m_pImage, ((b+anim_offset)%16)*16, ((b+anim_offset)/16)*16, xoff*8,16+i*16,16,16 );
+				if ((a | b) != 0)//<- This if prevents background clearing of 'bg' background block .. etiher we need to clear entire viewport before start drawing map, or must draw a black square here 'manually' .. not sure which is more efficient ultimately
+				{
+					DRAW_SPRITE16A(pVisView, a, b+anim_offset, xoff*8, 16+i*16);
+				}
 
-			// BLOCK[0,1] -> foreground block
-			a = *(tempptr);
-			b = *(tempptr+1);
-			// Animated block?
-			anim_offset = (GET_EXTRA( a, b, 4 ) & FLAG_ANIMATED) ? anim4_count : 0;
+				// BLOCK[0,1] -> foreground block
+				a = *(tempptr);
+				b = *(tempptr+1);
+				// Animated block?
+				anim_offset = (GET_EXTRA( a, b, 4 ) & FLAG_ANIMATED) ? anim4_count : 0;
 
-			// draw foreground block, unless its (0,0)
-			if ((a | b) != 0)
-				DRAW_SPRITE16A(pVisView, a, b+anim_offset, xoff*8, 16+i*16);
-
+				// draw foreground block, unless its (0,0)
+				if ((a | b) != 0)
+					DRAW_SPRITE16A(pVisView, a, b+anim_offset, xoff*8, 16+i*16);
+			}
 			xoff+=2;
 			tempptr += 4;
 		}
@@ -1168,21 +1349,33 @@ void GameDrawView()
 	if (bShowDebugInfo) DrawDebugInfo();
 
 	// Flip the off-screen world viewport onto the backbuffer
-	GraphFlipView( VIEW_WIDTH );
+	GraphFlipView( VIEW_WIDTH, VIEW_HEIGHT );
 }
 
+// [dj2016-10] [fixme don't like these globals just floating here]
+// Level Editor: New feature: Hold in Ctrl+Alt and click with the mouse to automatically start level with hero 'dropped in' to the clicked position as starting position (to help with level editing / testing)
+int g_nOverrideStartX=-1;
+int g_nOverrideStartY=-1;
 void parse_level(void)
 {
 	int i, j;
 	// parse the level (for doors, keys, hero starting position etc.)
-	for ( i=0; i<100; i++ )
+	for ( i=0; i<100; ++i )
 	{
-		for ( j=0; j<128; j++ )
+		for ( j=0; j<128; ++j )
 		{
 			sprite_factory( 0, 0, j, i, 0, true );
 			sprite_factory( 0, 0, j, i, 1, true );
 		}
 	}
+	
+	// For level editor 'click to start hero here' function, added 2016-10:
+	if (g_nOverrideStartX>=0 && g_nOverrideStartY>=0)
+	{
+		relocate_hero(g_nOverrideStartX,g_nOverrideStartY);
+	}
+	g_nOverrideStartX=-1;
+	g_nOverrideStartY=-1;
 }
 
 void sprite_factory( unsigned char a, unsigned char b, int ix, int iy, int ifore, bool bfromlevel )
@@ -1381,8 +1574,8 @@ void DrawDebugInfo()
 	}
 
 	GraphDrawString(pVisView, g_pFont8x8, 32, 16, (unsigned char*)"Debug info on (D)" );
-	char buf[64];
-	sprintf(buf, "%d things", g_apThings.size());
+	char buf[128]={0};
+	sprintf(buf, "%d things", (int)g_apThings.size());
 	GraphDrawString(pVisView, g_pFont8x8, 32, 24, (unsigned char*)buf );
 	sprintf(buf, "%d visible", nNumVisible);
 	GraphDrawString(pVisView, g_pFont8x8, 32, 32, (unsigned char*)buf );
@@ -1398,7 +1591,7 @@ void DrawDebugInfo()
 void DrawBullets()
 {
 	unsigned int i;
-	for ( i=0; i<g_apBullets.size(); i++ )
+	for ( i=0; i<g_apBullets.size(); ++i )
 	{
 		CBullet *pBullet = g_apBullets[i];
 		if (OVERLAPS_VIEW(pBullet->x, pBullet->y, pBullet->x+BULLET_WIDTH, pBullet->y+BULLET_HEIGHT))

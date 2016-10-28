@@ -28,18 +28,21 @@ void ShowInstructions()
 	instructionsMenu.setSize(0);
 	instructionsMenu.setItems(instructionsMenuItems);
 	instructionsMenu.setMenuCursor(instructionsMenuCursor);
-	instructionsMenu.setClrBack(djColor(0,173,173));
+	instructionsMenu.setClrBack(djColor(48,66,128));
 	instructionsMenu.setXOffset(220);
-	instructionsMenu.setYOffset(128);
+	instructionsMenu.setYOffset(136);
 	if (pImgInstructions==NULL)
 	{
 		if (NULL != (pImgInstructions = new djImage))
+		{
 			pImgInstructions->Load( FILE_IMG_INSTRUCTIONS );
+			djCreateImageHWSurface( pImgInstructions );
+		}
 	}
 	if (pImgInstructions)
 	{
 		djgDrawImage( pVisBack, pImgInstructions, 0, 0, pImgInstructions->Width(), pImgInstructions->Height() );
-		GraphFlip();
+		GraphFlip(true);
 
 		// Pop up credits menu
 		do_menu( &instructionsMenu );

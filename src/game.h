@@ -16,13 +16,14 @@ License: GNU GPL Version 2 (*not* "later versions")
 
 class CBullet;
 
+#include <cstddef>//NULL
 #include <vector>
 using namespace std;
 
-//! Visible blocks on X axis in game viewport
-#define VIEW_WIDTH (12)
-//! Visible blocks on Y axis in game viewport
-#define VIEW_HEIGHT (10)
+//! Visible 'blocks' on X axis in game viewport
+extern int VIEW_WIDTH;
+//! Visible 'blocks' on Y axis in game viewport
+extern int VIEW_HEIGHT;
 
 //! Tests if rectangle overlaps portion of world visible on screen (pixel coordinates)
 #define OVERLAPS_VIEW(x1,y1,x2,y2) (OVERLAPS(x1,y1,x2,y2,16*xo,16*yo,16*(xo+VIEW_WIDTH)+(8*xo_small),16*(yo+VIEW_HEIGHT)))
@@ -45,6 +46,7 @@ enum EdjGameSounds
 	SOUND_EXIT,
 	SOUND_OPENDOOR,
 	SOUND_EXPLODE,
+	SOUND_SHOOT2,
 	SOUND_MAX
 };
 extern SOUND_HANDLE g_iSounds[SOUND_MAX];

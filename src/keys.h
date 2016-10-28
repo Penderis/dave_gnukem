@@ -26,7 +26,7 @@ enum
 //! Game keys (e.g. SDLK_LEFT)
 extern int g_anKeys[KEY_NUMKEYS];
 //! Game key descriptions
-extern char *g_aszKeys[KEY_NUMKEYS];
+extern const char *g_aszKeys[KEY_NUMKEYS];
 
 //! Initialise game key system
 extern void InitialiseGameKeySystem();
@@ -36,5 +36,8 @@ extern bool IsGameKey(int nKeyCode);
 
 //! Store current game keys into the settings object
 extern void StoreGameKeys();
+
+//! Helper to check if the given (SDL) keycode has been assigned to a game action under 'redefine keys'
+extern bool IsGameKeyAssigned(int nKeyCode);
 
 #endif

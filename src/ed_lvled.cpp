@@ -25,15 +25,15 @@
 #define POS_LEVELVIEW_Y 2
 #define LEVEL_VIEW_WIDTH 22
 #define LEVEL_VIEW_HEIGHT 16
-#define POS_LEVELINSTRUCTIONS_X 420
-#define POS_LEVELINSTRUCTIONS_Y 320
 
 
 
 static int	levelview_x = 0;	// these two are for representing
 static int	levelview_y = 0;	// a minimap.
+static int	levelview_w = LEVEL_VIEW_WIDTH;	// these two are for representing
+static int	levelview_h = LEVEL_VIEW_HEIGHT;	// a minimap.
 static bool	bShowBack = true;	// toggles display of background blocks (the ones that could be trated as 'world', not the entities)
-static bool	bLevelFore = false;	// toggles drawing of foreground layer
+static bool	bLevelFore = true;//false;	// toggles drawing of foreground layer
 static int	g_nLevel = 0;		// points to current level.
 static int	sprite0a = 0;
 static int	sprite0b = 0;
@@ -41,13 +41,14 @@ static int	sprite1a = 0;
 static int	sprite1b = 0;
 
 
-#define NUM_LEVEL_INSTRUCTIONS 15
-static char *level_instructions[NUM_LEVEL_INSTRUCTIONS] =
+#define NUM_LEVEL_INSTRUCTIONS 16
+static const char *level_instructions[NUM_LEVEL_INSTRUCTIONS] =
 {
 	"- Instructions: ----------",
 	"1-9     Place macros 1-9",
 	"Arrows  Move",
 	"Alt+Clk MoveTo",
+	"Ctl+Alt+Clk Start-Level-At",
 	"F4      Sprite editor",
 	"X       Toggle foreground",
 	"Z       Toggle background",
@@ -62,13 +63,13 @@ static char *level_instructions[NUM_LEVEL_INSTRUCTIONS] =
 };
 
 
-static void HandleMouse();
+bool HandleMouse();
 //static void SetSprite ( int new_sprite );
 static void MoveMinimap( int ox, int oy );
 static void DrawMinimapRectangle();
 static void RedrawView ();
 static void DrawSprites ();
-static void DrawGrid( int x, int y, int w, int h, int nx, int ny, djColor clr );
+static void DrawGrid( int x, int y, int w, int h, int nx, int ny, const djColor& clr );
 static void DrawLevelGrid();
 static void DrawLevelname();
 static void DrawMinimap();
@@ -106,6 +107,15 @@ void LVLED_Init (int curr_level)
 	//load the level from disk to get a clean copy.
 	const char * szfilename = g_pCurMission->GetLevel( g_nLevel )->GetFilename( );
 	level_load( 0, szfilename );
+
+	// [dj2016-10] Calculate how much screen area we can devote to minimap, so we can take advantage of
+	// modern larger screens for a much friendlier level editing experience.
+	levelview_w = (pVisMain->width - POS_LEVELVIEW_X) / 16;
+	levelview_h = (pVisMain->height - (NUM_LEVEL_INSTRUCTIONS*8) - POS_LEVELVIEW_Y) / 16;
+	// [dj2016-10] If we have a really high-res screen, theoretically this box could be larger than the whole level -
+	// if that happens to happen, clip to the max level W/H (don't want this box being larger than the map):
+	levelview_w = djMIN(levelview_w, LEVEL_WIDTH);
+	levelview_h = djMIN(levelview_h, LEVEL_HEIGHT);
 }
 
 
@@ -118,6 +128,7 @@ void LVLED_Kill ()
 
 switch_e LVLED_MainLoop ()
 {
+	//fixme hogs cpu ... but looking at below, maybe not trivial to fix without affecting usability? [dj2016-10]
 	//int	i;
 	bool	bRunning = true;
 	while ( bRunning )
@@ -130,7 +141,8 @@ switch_e LVLED_MainLoop ()
 		if (g_iKeys[DJKEY_ESC])
 			bRunning = false;
 
-		HandleMouse ();
+		if (!HandleMouse ())
+			bRunning = false;
 		static bool bflagleft = false;
 		static bool bflagright = false;
 		static bool bflagup = false;
@@ -198,8 +210,8 @@ switch_e LVLED_MainLoop ()
 				else if (
 						INBOUNDS( mouse_x, mouse_y,
 					POS_LEVELVIEW_X, POS_LEVELVIEW_Y,
-					POS_LEVELVIEW_X + LEVEL_VIEW_WIDTH * 16 - 1,
-					POS_LEVELVIEW_Y + LEVEL_VIEW_HEIGHT * 16 - 1 ))
+					POS_LEVELVIEW_X + levelview_w * 16 - 1,
+					POS_LEVELVIEW_Y + levelview_h * 16 - 1 ))
 				{
 					LevelFill(
 						levelview_x + (mouse_x-POS_LEVELVIEW_X) / 16,
@@ -212,8 +224,8 @@ switch_e LVLED_MainLoop ()
 		// If the mouse is inside the main level view, do some extra checking
 		if (INBOUNDS( mouse_x, mouse_y,
 			POS_LEVELVIEW_X, POS_LEVELVIEW_Y,
-			POS_LEVELVIEW_X + LEVEL_VIEW_WIDTH * 16 - 1,
-			POS_LEVELVIEW_Y + LEVEL_VIEW_HEIGHT * 16 - 1 ))
+			POS_LEVELVIEW_X + levelview_w * 16 - 1,
+			POS_LEVELVIEW_Y + levelview_h * 16 - 1 ))
 		{
 			int iLevelX = levelview_x + (mouse_x-POS_LEVELVIEW_X) / 16;
 			int iLevelY = levelview_y + (mouse_y-POS_LEVELVIEW_Y) / 16;
@@ -328,9 +340,9 @@ HandleMouse
 TODO: write the bastard
 =================
 */
-void HandleMouse ()
+bool HandleMouse ()
 {
-	int ax, ay;
+	int ax=0, ay=0;
 
 	// sprites area
 	if (INBOUNDS( mouse_x, mouse_y,
@@ -353,9 +365,9 @@ void HandleMouse ()
 		if (g_iKeys[DJKEY_ALT])
 		{
 			if (mouse_b & 1)
-				MoveMinimap( ax - (LEVEL_VIEW_WIDTH / 2),
-//				level_move_view( ax - (LEVEL_VIEW_WIDTH / 2),
-				ay - (LEVEL_VIEW_HEIGHT / 2) );
+				MoveMinimap( ax - (levelview_w / 2),
+//				level_move_view( ax - (levelview_w / 2),
+				ay - (levelview_h / 2) );
 		}
 		else if (mouse_b & 1)
 		{
@@ -369,12 +381,22 @@ void HandleMouse ()
 	// zoomed view area
 	else if (INBOUNDS( mouse_x, mouse_y,
 		POS_LEVELVIEW_X, POS_LEVELVIEW_Y,
-		POS_LEVELVIEW_X + LEVEL_VIEW_WIDTH * 16 - 1,
-		POS_LEVELVIEW_Y + LEVEL_VIEW_HEIGHT * 16 - 1 ))
+		POS_LEVELVIEW_X + levelview_w * 16 - 1,
+		POS_LEVELVIEW_Y + levelview_h * 16 - 1 ))
 	{
 		ax = (mouse_x - POS_LEVELVIEW_X) / 16;
 		ay = (mouse_y - POS_LEVELVIEW_Y) / 16;
-		if (mouse_b & 1)
+		// dj2016-10: Hold in Ctrl+Alt and click with the mouse to automatically start level with hero 'dropped in' to the clicked position as starting position (to help with level editing / testing)
+		if ((mouse_b & 1)!=0 && g_iKeys[DJKEY_CTRL]!=0 && g_iKeys[DJKEY_ALT]!=0)
+		{
+			extern int g_nOverrideStartX;
+			extern int g_nOverrideStartY;
+
+			g_nOverrideStartX = levelview_x+ax;
+			g_nOverrideStartY = levelview_y+ay;
+			return false;
+		}
+		else if (mouse_b & 1)
 		{
 			SetLevel( ax + levelview_x, ay + levelview_y,
 				sprite0a, sprite0b, bLevelFore );
@@ -385,6 +407,7 @@ void HandleMouse ()
 				sprite1a, sprite1b, bLevelFore );
 		}
 	}
+	return true;
 }
 
 
@@ -400,8 +423,8 @@ static void MoveMinimap( int ox, int oy )
 		return;
 
 	// Set new level view offset, checking bounds.
-	levelview_x = djCLAMP(ox, 0, 128 - LEVEL_VIEW_WIDTH);
-	levelview_y = djCLAMP(oy, 0, 100 - LEVEL_VIEW_HEIGHT);
+	levelview_x = djCLAMP(ox, 0, 128 - levelview_w);
+	levelview_y = djCLAMP(oy, 0, 100 - levelview_h);
 
 	// Redraw the purple rectangle
 	DrawMinimapRectangle();
@@ -433,10 +456,10 @@ void RedrawView ()
 
 void DrawSprites ()
 {
-	int i;
-	int ox, oy;
-	int xoffset, yoffset;
-	char buf[1024];
+	int i=0;
+	int ox=0, oy=0;
+	int xoffset=0, yoffset=0;
+	char buf[1024]={0};
 
 //	djgSetColorFore( pVisMain, djColor(255,255,255) );
 
@@ -458,7 +481,7 @@ void DrawSprites ()
 }
 
 
-void DrawGrid( int x, int y, int w, int h, int nx, int ny, djColor clr )
+void DrawGrid( int x, int y, int w, int h, int nx, int ny, const djColor& clr )
 {
 	djgSetColorFore( pVisMain, clr );
 	int i;
@@ -489,11 +512,10 @@ void DrawLevelGrid()
 
 void DrawLevelname()
 {
-	const char * szfilename;
-	szfilename = g_pCurMission->GetLevel(g_nLevel)->GetFilename();
-	ED_DrawStringClear( POS_LEVELVIEW_X, POS_LEVELVIEW_Y + 16 * LEVEL_VIEW_HEIGHT + 8,
+	const char * szfilename = g_pCurMission->GetLevel(g_nLevel)->GetFilename();
+	ED_DrawStringClear( 0, POS_LEVELVIEW_Y + 16 * levelview_h + 8,
 		"                           " );
-	ED_DrawString( POS_LEVELVIEW_X, POS_LEVELVIEW_Y + 16 * LEVEL_VIEW_HEIGHT + 8,
+	ED_DrawString( 0, POS_LEVELVIEW_Y + 16 * levelview_h + 8,
 		szfilename );
 }
 
@@ -503,8 +525,8 @@ void DrawMinimapRectangle()
 	djgDrawRectangle( pVisMain,
 		levelview_x * LEVEL_GRIDSIZE,
 		levelview_y * LEVEL_GRIDSIZE,
-		(LEVEL_VIEW_WIDTH-1) * LEVEL_GRIDSIZE + LEVEL_GRIDSIZE,
-		(LEVEL_VIEW_HEIGHT-1) * LEVEL_GRIDSIZE + LEVEL_GRIDSIZE );
+		(levelview_w-1) * LEVEL_GRIDSIZE + LEVEL_GRIDSIZE,
+		(levelview_h-1) * LEVEL_GRIDSIZE + LEVEL_GRIDSIZE );
 }
 
 void DrawMinimap()
@@ -515,9 +537,9 @@ void DrawMinimap()
 	// Draw the purple rectangle indicating where your zoomed view is
 	DrawMinimapRectangle();
 	// Draw the zoomed view
-	for ( i=0; i<LEVEL_VIEW_HEIGHT; i++ )
+	for ( i=0; i<levelview_h; i++ )
 	{
-		for ( j=0; j<LEVEL_VIEW_WIDTH; j++ )
+		for ( j=0; j<levelview_w; j++ )
 		{
 			a = *(level_pointer( 0, levelview_x + j, levelview_y + i) + 2);
 			b = *(level_pointer( 0, levelview_x + j, levelview_y + i) + 3);
@@ -544,17 +566,52 @@ void DrawMinimap()
 			}
 		}
 	}
+
+	// If hold in Ctrl+Alt, draw hero overlay at mouse cursor position to indicate the new hero 'drop-in-level-here' functionality [dj2016-10]
+	if (INBOUNDS( mouse_x, mouse_y,
+		POS_LEVELVIEW_X, POS_LEVELVIEW_Y,
+		POS_LEVELVIEW_X + levelview_w * 16 - 1,
+		POS_LEVELVIEW_Y + levelview_h * 16 - 1 ))
+	{
+		int ax = (mouse_x - POS_LEVELVIEW_X) / 16;
+		int ay = (mouse_y - POS_LEVELVIEW_Y) / 16;
+		if (g_iKeys[DJKEY_CTRL]!=0 && g_iKeys[DJKEY_ALT]!=0)
+		{
+			// These sprite offsets etc. are horribly hardcoded [show hero sprite]
+			if (ay>0)
+			{
+				ED_DrawSprite( POS_LEVELVIEW_X + (ax-1) * 16+8, POS_LEVELVIEW_Y + (ay-1) * 16, 4, 16 );
+				ED_DrawSprite( POS_LEVELVIEW_X + (ax  ) * 16+8, POS_LEVELVIEW_Y + (ay-1) * 16, 4, 17 );
+			}
+			ED_DrawSprite( POS_LEVELVIEW_X + (ax-1) * 16+8, POS_LEVELVIEW_Y + ay * 16, 4, 18 );
+			ED_DrawSprite( POS_LEVELVIEW_X + (ax  ) * 16+8, POS_LEVELVIEW_Y + ay * 16, 4, 19 );
+		}
+	}
 }
 
 
 
 void ShowInstructions()
 {
+	//[dj20126-10] fixme[low/future]: Font width/height should be gotten from the font object, not hardcoded all over the place
+	const unsigned int FONT_HEIGHT = 8;
+	const unsigned int FONT_WIDTH = 8;
+	
+	// [dj2016-10] Instructions in bottom right of screen
+	unsigned int uMaxStrLen = 0;
+	for ( int i=0; i<NUM_LEVEL_INSTRUCTIONS; ++i )//Get longest string width, to calculate this things width
+	{
+		uMaxStrLen = djMAX(uMaxStrLen,strlen(level_instructions[i]));
+	}
+	unsigned int uOffsetX = pVisMain->width - uMaxStrLen * FONT_WIDTH;
+	unsigned int uOffsetY = pVisMain->height - NUM_LEVEL_INSTRUCTIONS * FONT_HEIGHT;
+	djgSetColorFore( pVisMain, djColor(42,57,112) );
+	djgDrawBox( pVisMain, uOffsetX, uOffsetY, uMaxStrLen*FONT_WIDTH, NUM_LEVEL_INSTRUCTIONS*FONT_HEIGHT );
 	for ( int i=0; i<NUM_LEVEL_INSTRUCTIONS; i++ )
 	{
 		ED_DrawString(
-			POS_LEVELINSTRUCTIONS_X,
-			POS_LEVELINSTRUCTIONS_Y + i * 8,
+			uOffsetX,
+			uOffsetY + i * FONT_HEIGHT,
 			level_instructions[i] );
 	}
 }
@@ -617,8 +674,8 @@ void SetLevel( int x, int y, int a, int b, bool bforeground )
 
 	if ( ( x >= levelview_x )
 		&& ( y >= levelview_y )
-		&& ( x < levelview_x + LEVEL_VIEW_WIDTH )
-		&& ( y < levelview_y + LEVEL_VIEW_HEIGHT ) )
+		&& ( x < levelview_x + levelview_w )
+		&& ( y < levelview_y + levelview_h ) )
 		ED_DrawSprite( POS_LEVELVIEW_X + (x - levelview_x) * 16,
 		POS_LEVELVIEW_Y + (y - levelview_y) * 16,
 		a, b );

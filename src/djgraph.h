@@ -46,11 +46,9 @@ class djVisual
 public:
 	djVisual()
 	{
-#ifdef USESDL
 		pSurface = NULL;
 		colorfore = djColor(255,255,255);
 		colorback = djColor(0,0,0);
-#endif
 		width    = 0;
 		height   = 0;
 		stride   = 0;
@@ -58,11 +56,9 @@ public:
 		pixwidth = 0;
 		m_bFullscreen = false;
 	}
-#ifdef USESDL
 	SDL_Surface *pSurface;
 	djColor                  colorfore;
 	djColor                  colorback;
-#endif
 	int                      width;
 	int                      height;
 	int                      stride;
@@ -75,7 +71,7 @@ public:
 // Color management
 
 //! Create a 32-bit unsigned int representing the given colour as it should be written to the given display surface.
-extern unsigned int djgMapColor( djVisual *pVis, djColor color );
+extern unsigned int djgMapColor( djVisual *pVis, const djColor& color );
 /*--------------------------------------------------------------------------*/
 // Visual management
 
@@ -95,11 +91,11 @@ extern void      djgFlush( djVisual * pVis );
 //-- Color functions
 
 //! set foreground and background colors
-extern void       djgSetColor( djVisual *pVis, djColor clrFore, djColor clrBack );
+extern void       djgSetColor( djVisual *pVis, const djColor& clrFore, const djColor& clrBack );
 //! set foreground color
-extern void       djgSetColorFore( djVisual * pVis, djColor color );
+extern void       djgSetColorFore( djVisual * pVis, const djColor& color );
 //! set background color
-extern void       djgSetColorBack( djVisual * pVis, djColor color );
+extern void       djgSetColorBack( djVisual * pVis, const djColor& color );
 
 //-- Drawing primitives
 
@@ -108,7 +104,7 @@ extern void       djgClear( djVisual * pVis );
 //! Put pixel
 extern void       djgPutPixel( djVisual * pVis, int x, int y, int r, int g, int b );
 //! Put pixel
-extern void       djgPutPixel( djVisual * pVis, int x, int y, djColor color );
+extern void       djgPutPixel( djVisual * pVis, int x, int y, const djColor& color );
 //! draw rectangle in current color
 extern void       djgDrawRectangle( djVisual * pVis, int x, int y, int w, int h );
 //! draw filled box in current color
@@ -129,7 +125,7 @@ extern void       djgDrawImageAlpha( djVisual *pVis, djImage *pImage, int xS, in
 //! Draw (w,h) pixels from a visual at (xD,yD) from (xS,yS)
 extern void       djgDrawVisual( djVisual *pDest, djVisual *pSrc, int xD, int yD, int xS, int yS, int w, int h );
 //! flip one visual to another
-extern void       djgFlip( djVisual * pVisDest, djVisual * pVisSrc );
+extern void       djgFlip( djVisual * pVisDest, djVisual * pVisSrc, bool bScaleView );
 
 
 // DEBUG by rtfb
@@ -153,6 +149,11 @@ public:
 	}
 };
 
+
+/*--------------------------------------------------------------------------*/
+//[dj2016-10] experimenting here with attempted HW surface cache, needs work [started as fixing wrong colors on Linux VNC]
+extern bool djCreateImageHWSurface( djImage* pImage/*, djVisual* pVisDisplayBuffer*/ );
+/*--------------------------------------------------------------------------*/
 
 #endif
 

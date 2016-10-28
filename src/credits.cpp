@@ -14,7 +14,7 @@
 
 djImage *pImageCredits = NULL;
 
-struct SMenuItem creditsMenuItems[] =
+const struct SMenuItem creditsMenuItems[] =
 {
    { false, "        " },
    { true,  "   OK   " },
@@ -29,13 +29,14 @@ void InitCredits()
 	// Load credits bitmap
 	pImageCredits = new djImage;
 	pImageCredits->Load( FILE_IMG_CREDITS );
+	djCreateImageHWSurface( pImageCredits );
 
 	creditsMenu.setSize ( 0 );
 	creditsMenu.setItems ( creditsMenuItems );
 	creditsMenu.setMenuCursor (creditsMenuCursor);
 	creditsMenu.setClrBack( djColor(0,0,0) );
 	creditsMenu.setXOffset (200);
-	creditsMenu.setYOffset (128);
+	creditsMenu.setYOffset (100);
 }
 
 void KillCredits()
@@ -51,7 +52,7 @@ void ShowCredits()
 
 	// Display credits bitmap
 	djgDrawImage( pVisBack, pImageCredits, 0, 0, pImageCredits->Width(), pImageCredits->Height() );
-	GraphFlip();
+	GraphFlip(true);
 
 	// Pop up credits menu
 	do_menu( &creditsMenu );

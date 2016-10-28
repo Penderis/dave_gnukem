@@ -20,12 +20,23 @@ int g_anKeys[KEY_NUMKEYS] =
 	SDLK_UP,
 	SDLK_LEFT,
 	SDLK_RIGHT,
-	SDLK_RCTRL,
-	SDLK_RALT
+	SDLK_RCTRL,//Note LCTRL and RCTRL are both 'mapped onto' just RCTRL currently [dj2016-10]
+	SDLK_RALT//Note LALT and RALT are both 'mapped onto' just RALT currently [dj2016-10]
 };
 
+// Note here keycode is the SDL one, not the 'DJ' one [dj2016-10]
+bool IsGameKeyAssigned(int nKeyCode)
+{
+	for ( unsigned int i=0; i<KEY_NUMKEYS; ++i )
+	{
+		if ( g_anKeys[i]==nKeyCode )
+			return true;
+	}
+	return false;
+}
+
 // Key descriptions
-char *g_aszKeys[KEY_NUMKEYS] =
+const char *g_aszKeys[KEY_NUMKEYS] =
 {
 	"Action",
 	"Left",
@@ -38,10 +49,9 @@ vector<int> g_anValidGameKeys;
 
 void StoreGameKeys()
 {
-	int i;
-	for ( i=0; i<KEY_NUMKEYS; i++ )
+	for ( int i=0; i<KEY_NUMKEYS; i++ )
 	{
-		char szKey[64];
+		char szKey[64]={0};
 		sprintf(szKey, "Key%s", g_aszKeys[i]);
 		g_Settings.SetSettingInt(szKey, g_anKeys[i]);
 	}
@@ -50,16 +60,15 @@ void StoreGameKeys()
 void InitialiseGameKeySystem()
 {
 	// Set default keys (if not defined in settings already, e.g. if there was no config file)
-	int i;
-	char szKey[64];
-	for ( i=0; i<KEY_NUMKEYS; i++ )
+	char szKey[64]={0};
+	for ( int i=0; i<KEY_NUMKEYS; i++ )
 	{
 		sprintf(szKey, "Key%s", g_aszKeys[i]);
 		g_Settings.SetDefaultSettingInt(szKey, g_anKeys[i]);
 	}
 
 	// Read key settings from config
-	for ( i=0; i<KEY_NUMKEYS; i++ )
+	for ( int i=0; i<KEY_NUMKEYS; i++ )
 	{
 		sprintf(szKey, "Key%s", g_aszKeys[i]);
 		g_anKeys[i] = g_Settings.FindSettingInt(szKey);
